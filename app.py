@@ -8,7 +8,7 @@ from sklearn.preprocessing import MinMaxScaler
 @st.cache(allow_output_mutation=True)
 def load_data():
     # Replace 'dummy_dataset.csv' with the path to your actual dataset.
-    df = pd.read_csv('dummy_dataset.csv')
+    df = pd.read_csv('Updated_Trivandrum_Data__No_Duplicates_.csv')
     return df
 
 def convert_price_range(x):
