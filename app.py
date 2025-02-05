@@ -22,12 +22,12 @@ def preprocess_data(df):
     df['Price Range Numeric'] = df['Price Range'].apply(convert_price_range)
     # Set a default 'Uniqueness' metric for boutiques and antique stores.
     df['Uniqueness'] = 1
-    # Create an Accessibility metric.
+    # Create an Accessibility metric based on Public Transport Proximity (m): lower is better.
     scaler_access = MinMaxScaler()
     df['Public Transport Proximity Norm'] = scaler_access.fit_transform(df[['Public Transport Proximity (m)']])
     df['Accessibility'] = 1 - df['Public Transport Proximity Norm']
     
-    # Define a list of metrics that will be used in ranking.
+    # List of metric columns to be normalized.
     metric_cols = [
         "Rating", "Reviews", "Footfall", "Repeat Visitors (%)", "Avg Stay Duration (mins)",
         "Price Range Numeric", "Popularity Index", "Instagram Mentions",
@@ -37,7 +37,7 @@ def preprocess_data(df):
     scaler_metrics = MinMaxScaler()
     df_norm = df.copy()
     df_norm[metric_cols] = scaler_metrics.fit_transform(df[metric_cols])
-    # Carry over precomputed Accessibility and Uniqueness.
+    # Carry over the precomputed Accessibility and Uniqueness metrics.
     df_norm['Accessibility'] = df['Accessibility']
     df_norm['Uniqueness'] = df['Uniqueness']
     return df_norm
@@ -45,7 +45,7 @@ def preprocess_data(df):
 def get_default_category_weights(cat):
     """
     Returns the default weight dictionary for a given category.
-    For 'temple' or 'church', they share the same default weights.
+    For 'temple' or 'church', they share the same default.
     """
     cat_lower = cat.strip().lower()
     if cat_lower in ['temple', 'church']:
@@ -119,7 +119,7 @@ def compute_category_score(row, weights):
     return score
 
 def compute_custom_scores(df, custom_weights):
-    # Apply the custom weights only for rows in the current category.
+    # Compute composite scores using the provided (normalized) custom weights.
     df = df.copy()
     df['Custom_Composite_Score'] = df.apply(lambda row: compute_category_score(row, custom_weights), axis=1)
     return df
@@ -127,7 +127,7 @@ def compute_custom_scores(df, custom_weights):
 # ---------- Streamlit App ----------
 def main():
     st.title("Trivandrum Top 10 Curated Venues")
-    st.write("This app shows the top 10 venues in a category based on a composite score. CEOs can adjust the metric weights to fine-tune the rankings.")
+    st.write("This app displays the top 10 venues in a category based on a composite score. CEOs can adjust the raw weights; these values will automatically be normalized to preserve total weight (i.e. sum to 1).")
     
     # Load and preprocess data.
     df = load_data()
@@ -140,7 +140,7 @@ def main():
         'Palace', 'Antique Store'
     ]
     
-    # Category selection drop-down.
+    # Create a drop-down widget for category selection.
     selected_category = st.selectbox("Select Category", available_categories)
     cat_lower = selected_category.strip().lower()
     
@@ -157,38 +157,48 @@ def main():
         return
 
     st.subheader(f"Default Weights for {selected_category.title()}")
-    # Display the default weights.
+    # Show the default weights.
     for metric, weight in default_weights.items():
         st.write(f"**{metric}:** {weight}")
     
     st.markdown("---")
     st.subheader("Adjust Weights")
-    st.write("Modify the weights below and click **Update Rankings** to see the changes.")
+    st.write("Modify the raw weights below. They will be automatically normalized (so the sum equals 1) before recalculating the composite scores.")
     
     # Create a form to adjust weights.
     with st.form("weight_adjustments"):
-        custom_weights = {}
+        raw_weights = {}
         for metric, default_value in default_weights.items():
-            custom_weight = st.number_input(
-                label=f"Weight for {metric}",
+            raw_value = st.number_input(
+                label=f"Raw weight for {metric}",
                 min_value=0.0,
-                max_value=1.0,
+                max_value=10.0,
                 value=default_value,
                 step=0.05,
                 format="%.2f"
             )
-            custom_weights[metric] = custom_weight
+            raw_weights[metric] = raw_value
         submitted = st.form_submit_button("Update Rankings")
     
+    # Normalize the raw weights to sum to 1.
+    total_raw = sum(raw_weights.values())
+    if total_raw > 0:
+        normalized_weights = {metric: val / total_raw for metric, val in raw_weights.items()}
+    else:
+        normalized_weights = default_weights  # Fallback if total is zero (should not occur)
+    
+    st.subheader("Normalized Weights")
+    for metric, norm_val in normalized_weights.items():
+        st.write(f"**{metric}:** {norm_val:.2f}")
+    
+    # Compute and display the ranking using the normalized weights.
     if submitted:
-        # Compute composite scores for the filtered category using custom weights.
-        df_custom = compute_custom_scores(df_filtered, custom_weights)
+        df_custom = compute_custom_scores(df_filtered, normalized_weights)
         df_custom = df_custom.sort_values(by='Custom_Composite_Score', ascending=False)
         st.subheader(f"Top 10 {selected_category.title()} by Custom Composite Score")
         st.dataframe(df_custom[['Name', 'Custom_Composite_Score']].reset_index(drop=True))
     else:
-        # Display the ranking using default weights.
-        df_default = compute_custom_scores(df_filtered, default_weights)
+        df_default = compute_custom_scores(df_filtered, get_default_category_weights(selected_category))
         df_default = df_default.sort_values(by='Custom_Composite_Score', ascending=False)
         st.subheader(f"Top 10 {selected_category.title()} by Composite Score")
         st.dataframe(df_default[['Name', 'Custom_Composite_Score']].reset_index(drop=True))
