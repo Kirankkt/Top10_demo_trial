@@ -2,17 +2,18 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+import matplotlib.pyplot as plt
 
 # ---------- Helper Functions ----------
 
 @st.cache_data
 def load_data():
-    # Replace 'dummy_dataset.csv' with the path to your dataset file.
+    # Replace 'dummy_dataset.csv' with your dataset file path.
     df = pd.read_csv('Updated_Trivandrum_Data__No_Duplicates_.csv')
     return df
 
 def convert_price_range(x):
-    """Convert a price range string (e.g., "$$$") to a numeric value by counting '$'."""
+    """Convert a price range string (e.g., "$$$") to a numeric value (the count of '$')."""
     if isinstance(x, str):
         return len(x.strip())
     return np.nan
@@ -20,14 +21,14 @@ def convert_price_range(x):
 def preprocess_data(df):
     # Convert Price Range to a numeric value.
     df['Price Range Numeric'] = df['Price Range'].apply(convert_price_range)
-    # Set a default 'Uniqueness' metric for boutiques and antique stores.
+    # Set a default 'Uniqueness' metric for categories that need it.
     df['Uniqueness'] = 1
-    # Create an Accessibility metric based on Public Transport Proximity (m): lower is better.
+    # Create an Accessibility metric based on Public Transport Proximity (m); lower is better.
     scaler_access = MinMaxScaler()
     df['Public Transport Proximity Norm'] = scaler_access.fit_transform(df[['Public Transport Proximity (m)']])
     df['Accessibility'] = 1 - df['Public Transport Proximity Norm']
     
-    # List of metric columns to be normalized.
+    # List of metric columns used in ranking.
     metric_cols = [
         "Rating", "Reviews", "Footfall", "Repeat Visitors (%)", "Avg Stay Duration (mins)",
         "Price Range Numeric", "Popularity Index", "Instagram Mentions",
@@ -37,7 +38,7 @@ def preprocess_data(df):
     scaler_metrics = MinMaxScaler()
     df_norm = df.copy()
     df_norm[metric_cols] = scaler_metrics.fit_transform(df[metric_cols])
-    # Carry over the precomputed Accessibility and Uniqueness metrics.
+    # Carry over precomputed Accessibility and Uniqueness.
     df_norm['Accessibility'] = df['Accessibility']
     df_norm['Uniqueness'] = df['Uniqueness']
     return df_norm
@@ -125,23 +126,27 @@ def compute_custom_scores(df, custom_weights):
     return df
 
 # ---------- Streamlit App ----------
+
 def main():
     st.title("Trivandrum Top 10 Curated Venues")
-    st.write("This app displays the top 10 venues in a category based on a composite score. CEOs can adjust the raw weights; these values will automatically be normalized to preserve total weight (i.e. sum to 1).")
+    st.write(
+        "This decision-support tool displays the top 10 venues for a selected category based on a composite score. "
+        "CEOs can adjust raw weights for key metrics—the app will automatically normalize these weights (so they sum to 1) "
+        "and update the rankings in real time."
+    )
     
     # Load and preprocess data.
     df = load_data()
     df_norm = preprocess_data(df)
     
-    # List of available categories.
+    # Sidebar: Category selection.
     available_categories = [
         'Restaurant', 'Nightclub', 'Museum', 'Theatre',
         'Attraction', 'Boutique', 'Temple', 'Church',
         'Palace', 'Antique Store'
     ]
-    
-    # Create a drop-down widget for category selection.
-    selected_category = st.selectbox("Select Category", available_categories)
+    st.sidebar.header("Configuration")
+    selected_category = st.sidebar.selectbox("Select Category", available_categories)
     cat_lower = selected_category.strip().lower()
     
     # Filter dataset based on category.
@@ -155,18 +160,20 @@ def main():
     if df_filtered.empty:
         st.warning(f"No entries found for the category: {selected_category}")
         return
-
-    st.subheader(f"Default Weights for {selected_category.title()}")
-    # Show the default weights.
+    
+    # Display default weights.
+    st.sidebar.subheader(f"Default Weights for {selected_category.title()}")
     for metric, weight in default_weights.items():
-        st.write(f"**{metric}:** {weight}")
+        st.sidebar.write(f"**{metric}:** {weight}")
     
-    st.markdown("---")
-    st.subheader("Adjust Weights")
-    st.write("Modify the raw weights below. They will be automatically normalized (so the sum equals 1) before recalculating the composite scores.")
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Adjust Weights")
+    st.sidebar.write(
+        "Enter raw weight values below. These values will be automatically normalized so that their total sum equals 1."
+    )
     
-    # Create a form to adjust weights.
-    with st.form("weight_adjustments"):
+    # Form for adjusting raw weights.
+    with st.sidebar.form("weight_adjustments"):
         raw_weights = {}
         for metric, default_value in default_weights.items():
             raw_value = st.number_input(
@@ -180,28 +187,62 @@ def main():
             raw_weights[metric] = raw_value
         submitted = st.form_submit_button("Update Rankings")
     
-    # Normalize the raw weights to sum to 1.
+    # Normalize raw weights.
     total_raw = sum(raw_weights.values())
     if total_raw > 0:
         normalized_weights = {metric: val / total_raw for metric, val in raw_weights.items()}
     else:
-        normalized_weights = default_weights  # Fallback if total is zero (should not occur)
+        normalized_weights = default_weights  # Fallback if total is zero.
     
-    st.subheader("Normalized Weights")
+    st.sidebar.subheader("Normalized Weights")
     for metric, norm_val in normalized_weights.items():
-        st.write(f"**{metric}:** {norm_val:.2f}")
+        st.sidebar.write(f"**{metric}:** {norm_val:.2f}")
     
-    # Compute and display the ranking using the normalized weights.
+    # Draw a pie chart for the normalized weights.
+    fig, ax = plt.subplots(figsize=(4, 4))
+    labels = list(normalized_weights.keys())
+    sizes = list(normalized_weights.values())
+    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+    ax.axis('equal')
+    st.sidebar.pyplot(fig)
+    
+    # Compute composite scores using the custom normalized weights.
     if submitted:
         df_custom = compute_custom_scores(df_filtered, normalized_weights)
-        df_custom = df_custom.sort_values(by='Custom_Composite_Score', ascending=False)
-        st.subheader(f"Top 10 {selected_category.title()} by Custom Composite Score")
-        st.dataframe(df_custom[['Name', 'Custom_Composite_Score']].reset_index(drop=True))
     else:
-        df_default = compute_custom_scores(df_filtered, get_default_category_weights(selected_category))
-        df_default = df_default.sort_values(by='Custom_Composite_Score', ascending=False)
-        st.subheader(f"Top 10 {selected_category.title()} by Composite Score")
-        st.dataframe(df_default[['Name', 'Custom_Composite_Score']].reset_index(drop=True))
+        # If form not submitted, use default weights.
+        df_custom = compute_custom_scores(df_filtered, get_default_category_weights(selected_category))
+    
+    # Sort the venues by composite score.
+    df_custom = df_custom.sort_values(by='Custom_Composite_Score', ascending=False)
+    
+    # Main area: Display rankings.
+    st.subheader(f"Top 10 {selected_category.title()} by Composite Score")
+    st.dataframe(df_custom[['Name', 'Custom_Composite_Score']].reset_index(drop=True))
+    
+    # Bar Chart: Breakdown of composite score for the top venue.
+    if not df_custom.empty:
+        top_venue = df_custom.iloc[0]
+        st.markdown("### Breakdown of Top Venue Score")
+        breakdown = {}
+        for metric, weight in normalized_weights.items():
+            metric_value = top_venue.get(metric, 0)
+            breakdown[metric] = weight * metric_value
+        breakdown_df = pd.DataFrame({
+            'Metric': list(breakdown.keys()),
+            'Contribution': list(breakdown.values())
+        })
+        # Create a bar chart.
+        st.bar_chart(breakdown_df.set_index('Metric'))
+    
+    # Download Button: Allow exporting the ranking as a CSV file.
+    csv = df_custom[['Name', 'Custom_Composite_Score']].to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Download Rankings as CSV",
+        data=csv,
+        file_name='top_venues.csv',
+        mime='text/csv'
+    )
 
 if __name__ == "__main__":
     main()
