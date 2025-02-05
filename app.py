@@ -2,10 +2,11 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+import io
 
 # ---------- Helper Functions ----------
 
-@st.cache(allow_output_mutation=True)
+@st.cache_data
 def load_data():
     # Replace 'dummy_dataset.csv' with the path to your actual dataset.
     df = pd.read_csv('Updated_Trivandrum_Data__No_Duplicates_.csv')
@@ -50,7 +51,7 @@ def preprocess_data(df):
 def get_category_weights(cat):
     """
     Returns the weight dictionary for a given category.
-    For 'temple' or 'church', both use the same weights.
+    For user inputs "temple" or "church", both use the same weights.
     """
     cat_lower = cat.strip().lower()
     if cat_lower in ['temple', 'church']:
@@ -60,7 +61,6 @@ def get_category_weights(cat):
             'Footfall': 0.25,
             'Accessibility': 0.15
         }
-    # Weight dictionaries for other categories:
     weights_dict = {
         'restaurant': {
             'Rating': 0.25,
@@ -88,7 +88,7 @@ def get_category_weights(cat):
             'Rating': 0.30,
             'Reviews': 0.20,
             'Avg Stay Duration (mins)': 0.20,
-            'Instagram Mentions': 0.15,  # Proxy for social media mentions.
+            'Instagram Mentions': 0.15,
             'TripAdvisor Ranking': 0.15
         },
         'attraction': {
@@ -140,7 +140,7 @@ def main():
     df_norm = preprocess_data(df)
     df_norm = assign_composite_score(df_norm)
     
-    # List of available categories (adjust based on your dataset)
+    # List of available categories (adjust based on your dataset).
     available_categories = [
         'Restaurant', 'Nightclub', 'Museum', 'Theatre',
         'Attraction', 'Boutique', 'Temple', 'Church',
@@ -153,7 +153,6 @@ def main():
     # Filter data based on the selected category.
     cat_lower = category.strip().lower()
     if cat_lower in ['temple', 'church']:
-        # If the user selects either "Temple" or "Church", we filter for both.
         df_filtered = df_norm[df_norm['Category'].str.strip().str.lower().isin(['temple', 'church'])]
     else:
         df_filtered = df_norm[df_norm['Category'].str.strip().str.lower() == cat_lower]
