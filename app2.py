@@ -10,12 +10,12 @@ st.title("TVM Restaurant/Hotel/Café Ranking System")
 
 st.markdown("""
 Upload your **enriched_TVM_50.csv** file and adjust the **weights** to see how 
-the overall ranking changes. Select an establishment to see its metrics on a 
-**radar chart**. **Your selected restaurant** will remain the same even if you 
+the overall ranking changes. Then select an establishment to see its metrics on a 
+**radar chart**. This version preserves your chosen restaurant even when you 
 move the sliders.
 """)
 
-# Sidebar for adjusting metric weights
+# -- SIDEBAR: Metric Weights --
 st.sidebar.title("Adjust Metric Weights")
 pop_wt = st.sidebar.slider("Popularity Score Weight", 0.0, 1.0, 0.2, 0.05)
 rating_wt = st.sidebar.slider("Average Rating Weight", 0.0, 1.0, 0.2, 0.05)
@@ -38,19 +38,18 @@ if uploaded_file is not None:
 
     # Check that the columns exist
     required_cols = [
-        "Restaurant_Name", "Popularity_Score", "Avg_Rating", "Ambiance_Score",
-        "Service_Score", "Uniqueness_Score", "NRI_Friendly_Score"
+        "Restaurant_Name", "Popularity_Score", "Avg_Rating", 
+        "Ambiance_Score", "Service_Score", "Uniqueness_Score", 
+        "NRI_Friendly_Score"
     ]
     for col in required_cols:
         if col not in df.columns:
             st.error(f"Column '{col}' not found in CSV. Please upload the correct file.")
             st.stop()
 
-    # 1. Scale the numeric columns to [0, 10]
-    #    - For Avg_Rating (originally out of 5), first multiply by 2 => out of 10
+    # 1. Scale numeric columns to [0, 10]
+    #    - For Avg_Rating (out of 5), multiply by 2 => out of 10
     df["Avg_Rating_Scaled"] = df["Avg_Rating"] * 2
-
-    # Apply min–max scaling for each metric
     df["Popularity_Score_Scaled"]    = min_max_scale(df["Popularity_Score"])
     df["Avg_Rating_Scaled"]          = min_max_scale(df["Avg_Rating_Scaled"])
     df["Ambiance_Score_Scaled"]      = min_max_scale(df["Ambiance_Score"])
@@ -72,27 +71,41 @@ if uploaded_file is not None:
     df_sorted = df.sort_values("Custom_Composite", ascending=False)
 
     st.subheader("Ranked List (Based on Your Weights)")
-    st.dataframe(
-        df_sorted[["Restaurant_Name", "Custom_Composite"]].reset_index(drop=True)
-    )
+    st.dataframe(df_sorted[["Restaurant_Name", "Custom_Composite"]].reset_index(drop=True))
 
-    # Create a list of all restaurants (in sorted order)
+    # Prepare list of restaurants in sorted order
     restaurant_list = df_sorted["Restaurant_Name"].tolist()
 
-    # Use a key for the selectbox so Streamlit remembers the user's choice
+    # -- SESSION STATE for the selected restaurant --
+    # If we haven't chosen a restaurant yet, default to the top of the sorted list
+    if "selected_restaurant" not in st.session_state:
+        st.session_state.selected_restaurant = restaurant_list[0]
+
+    # If the current chosen restaurant isn't in the list, reset to the top
+    if st.session_state.selected_restaurant not in restaurant_list:
+        st.session_state.selected_restaurant = restaurant_list[0]
+
+    # Find the index of the currently selected restaurant in the sorted list
+    current_index = restaurant_list.index(st.session_state.selected_restaurant)
+
+    # Let the user select from the sorted list, with the current restaurant pre-selected
     selected_restaurant = st.selectbox(
         "Select an establishment:",
         restaurant_list,
-        key="selected_restaurant"
+        index=current_index
     )
 
-    # Retrieve the row for the selected restaurant
-    rest_data = df[df["Restaurant_Name"] == selected_restaurant].iloc[0]
+    # Update session state if user picks something else
+    if selected_restaurant != st.session_state.selected_restaurant:
+        st.session_state.selected_restaurant = selected_restaurant
 
-    st.markdown(f"### Details for **{selected_restaurant}**")
+    # Retrieve row for the session-state restaurant
+    rest_data = df[df["Restaurant_Name"] == st.session_state.selected_restaurant].iloc[0]
+
+    st.markdown(f"### Details for **{st.session_state.selected_restaurant}**")
     st.write("**Custom Composite Score:**", round(rest_data["Custom_Composite"], 2))
 
-    # Prepare data for the radar chart (use scaled metrics, each in [0, 10])
+    # Prepare data for the radar chart
     metrics = [
         "Popularity_Score_Scaled",
         "Avg_Rating_Scaled",
@@ -115,23 +128,23 @@ if uploaded_file is not None:
     values += values[:1]
     labels += labels[:1]
 
-    # Create the radar chart using Plotly
+    # Plotly Radar Chart
     fig = go.Figure(
         data=[
-            go.Scatterpolar(r=values, theta=labels, fill='toself', name=selected_restaurant)
+            go.Scatterpolar(r=values, theta=labels, fill='toself', 
+                            name=st.session_state.selected_restaurant)
         ],
         layout=go.Layout(
             polar=dict(
                 radialaxis=dict(
                     visible=True,
-                    range=[0, 10]  # each metric scaled to 0-10
+                    range=[0, 10]
                 )
             ),
             showlegend=False,
-            title=f"Metric Breakdown for {selected_restaurant}"
+            title=f"Metric Breakdown for {st.session_state.selected_restaurant}"
         )
     )
-
     st.plotly_chart(fig, use_container_width=True)
 
 else:
