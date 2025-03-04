@@ -11,7 +11,8 @@ st.title("TVM Restaurant/Hotel/Café Ranking System")
 st.markdown("""
 Upload your **enriched_TVM_50.csv** file and adjust the **weights** to see how 
 the overall ranking changes. Select an establishment to see its metrics on a 
-**radar chart**.
+**radar chart**. **Your selected restaurant** will remain the same even if you 
+move the sliders.
 """)
 
 # Sidebar for adjusting metric weights
@@ -58,7 +59,6 @@ if uploaded_file is not None:
     df["NRI_Friendly_Score_Scaled"]  = min_max_scale(df["NRI_Friendly_Score"])
 
     # 2. Compute a custom composite score using user-defined weights
-    #    Each metric is in [0, 10], so final is also in [0, 10] if total_weight=1
     df["Custom_Composite"] = (
         pop_wt  * df["Popularity_Score_Scaled"] +
         rating_wt  * df["Avg_Rating_Scaled"] +
@@ -76,9 +76,15 @@ if uploaded_file is not None:
         df_sorted[["Restaurant_Name", "Custom_Composite"]].reset_index(drop=True)
     )
 
-    # Select an establishment to see more details
+    # Create a list of all restaurants (in sorted order)
     restaurant_list = df_sorted["Restaurant_Name"].tolist()
-    selected_restaurant = st.selectbox("Select an establishment:", restaurant_list)
+
+    # Use a key for the selectbox so Streamlit remembers the user's choice
+    selected_restaurant = st.selectbox(
+        "Select an establishment:",
+        restaurant_list,
+        key="selected_restaurant"
+    )
 
     # Retrieve the row for the selected restaurant
     rest_data = df[df["Restaurant_Name"] == selected_restaurant].iloc[0]
