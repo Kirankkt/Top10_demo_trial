@@ -9,10 +9,9 @@ def min_max_scale(series):
 st.title("TVM Restaurant/Hotel/Café Ranking System")
 
 st.markdown("""
-Upload your **enriched_TVM_50.csv** file and adjust the **weights** to see how 
+Upload your  file and adjust the weights to see how 
 the overall ranking changes. Then select an establishment to see its metrics on a 
-**radar chart**. This version preserves your chosen restaurant even when you 
-move the sliders.
+radar chart. 
 """)
 
 # -- SIDEBAR: Metric Weights --
